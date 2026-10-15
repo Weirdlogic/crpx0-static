@@ -5,6 +5,8 @@
 #   B) Go pipeline:     tools/go/crpx0repro (debug/pe, zlib, crypto/aes+hmac, regex), stdlib only
 #   C) openssl CLI:     Fernet HMAC check + AES-128-CBC decrypt of ENCRYPTED_XOR_KEY
 #   D) crpx0_decrypt_test.py: recovery tool on synthetic fixtures with our own keys
+#   E) tools/go/crpx0fixtures writes CRPx0-format files independently (Go, own
+#      Fernet and RSA); crpx0_decrypt_crosscheck.py must restore them byte for byte
 # then diffs A, B, C and the recorded evidence summary. Nothing from the sample
 # is executed; nothing is resolved or contacted.
 # Usage: tools/reproduce_crpx0.sh <empty_out_dir>
@@ -49,6 +51,12 @@ echo "openssl XOR key sha256: $(sha256sum "$O/ossl/xor_key.bin" | cut -d' ' -f1)
 echo "== D) recovery tool on synthetic fixtures (own keys)"
 python3 -I "$R/tools/crpx0_decrypt_test.py" "$O/dectest" | grep -E '^(PASS|ALL|SOME)'
 cp "$O/dectest/summary.json" "$O/decrypt_test_summary.json"
+
+echo "== E) independent format check: Go-written fixtures"
+( cd "$R/tools/go/crpx0fixtures" && go build -o "$O/crpx0fixtures" . )
+"$O/crpx0fixtures" "$O/gofix"
+python3 -I "$R/tools/crpx0_decrypt_crosscheck.py" "$O/gofix" "$O/gowork" | grep -E '^(PASS|ALL|SOME)'
+cp "$O/gowork/crosscheck_summary.json" "$O/decrypt_crosscheck_summary.json"
 
 echo "== diff"
 python3 -I - "$O" "$E/pipeline-summary.json" <<'EOF'

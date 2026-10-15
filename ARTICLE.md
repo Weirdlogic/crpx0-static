@@ -15,9 +15,9 @@ None of them ran on my machine.
 | | |
 |---|---|
 | Key handling | The victim's key is posted as JSON over plain HTTP to `hxxp://207.180.29[.]236:8080/relay[.]php` before any file is encrypted |
-| Cryptography | Fernet (AES-128-CBC with HMAC) and RSA-4096; no weakness found |
-| What survives | Everything after the first 1 MiB of each file; deleted originals; very likely the shadow copies |
-| Broken in these builds | Lateral movement, the anti-debug check, the AMSI patch, and on 64-bit Windows the whole evasion layer |
+| Cryptography | Fernet (AES-128-CBC with HMAC) and RSA-4096; no exploitable weakness identified |
+| What survives | Everything after the first 1 MiB of each file; deleted originals; possibly the shadow copies |
+| Broken in these builds | Lateral movement, the anti-debug check, the AMSI patch; on 64-bit Windows the evasion layer gets truncated addresses |
 | Builds | 7 builds for affiliate 21, made in 76 minutes on 2026-08-02 |
 | Reproduced | Every layer rebuilt with Go and openssl: identical |
 
@@ -55,8 +55,11 @@ flowchart LR
 
 The ransomware makes one random key per computer, encrypts the first MiB of
 each file with it, and wraps the key with an RSA-4096 public key whose private
-half only the operators have. That part is done properly. The RSA key passed
-every weak-key test I ran, and there is no private key anywhere in the files.
+half only the operators have. I found no weakness in that part: the key
+comes from the operating system's random generator, the RSA key showed none of
+the weak-key properties I tested for, and there is no private key anywhere in
+the files. Those tests rule out the common mistakes; they do not prove the key
+secure.
 
 The problem for the operators is what happens to the key before that. The
 script sends it to its relay as a JSON field called `decryption_key`, over
@@ -71,8 +74,11 @@ the Python process's memory for the whole run, so a memory dump,
 I wrote a recovery tool for this case. It searches captures, logs and memory
 images for the key, checks each candidate against an encrypted file, and
 decrypts. Without the key it writes out the part of each file that was never
-encrypted. It is tested on synthetic files that I encrypted myself in the same
-format with my own keys; it has not yet been used on a real victim's files.
+encrypted. It is tested on synthetic files encrypted with my own keys, in two
+ways: files from my Python test code, and files from a separate writer in Go
+built straight from the malware's code, so that a misreading of the format
+could not hide in both. All of them come back byte for byte. It has not yet
+been used on a real victim's files.
 
 Other things work in a victim's favour. Only the first 1 MiB of each file is
 encrypted, so large files keep most of their content. Originals are deleted
@@ -94,19 +100,21 @@ encoded names, but those three names do not decode with any key. They are the
 same in all seven builds, while the builder re-encodes everything else per
 build. Both features do nothing.
 
-On 64-bit Windows the evasion layer fails as a whole. The script calls Windows
+On 64-bit Windows the evasion layer is broken too. The script calls Windows
 functions through Python's `ctypes` without declaring that they return
 pointers, so `ctypes` keeps only the lower 32 bits of each address. Stage 2
-installs 64-bit Python on every 64-bit Windows, where those addresses are
-above 4 GB. The ntdll unhooking, the ETW patch and the injection into
-explorer.exe all receive corrupted addresses and quietly give up.
+installs 64-bit Python on 64-bit Windows, and Python 3.10 needs Windows 8.1
+or later, where system DLLs sit above 4 GB in default configurations. The
+ntdll unhooking, the ETW patch and the injection into explorer.exe then
+receive corrupted addresses and quietly give up.
 
 ![ctypes truncation](reports/crpx0/2026-10-15-28685dff00aa/figures/fig-ctypes.svg)
 
 The UAC bypass writes a registry key that Windows does not read and starts
 fodhelper in a way that is expected to fail. If that holds, the ransomware
 runs without admin rights on a normal setup, and the commands that delete
-shadow copies fail. I have not confirmed this part on a live system yet; it is
+shadow copies are expected to fail, so they are worth checking on every
+affected machine. I have not confirmed this part on a live system yet; it is
 the one item in the report marked as expected rather than established.
 
 ## One builder, seven builds

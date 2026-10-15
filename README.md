@@ -15,12 +15,13 @@ Full technical report: [reports/crpx0/2026-10-15-28685dff00aa/report.md](reports
 - The victim's file key is sent as JSON over plain HTTP to the relay
   `hxxp://207.180.29[.]236:8080/relay[.]php` before encryption starts. A
   packet capture of that request is enough to decrypt the host.
-- The encryption itself (Fernet with RSA-4096) has no weakness we could find.
-  Only the first 1 MiB of each file is encrypted, originals are deleted
-  without being wiped, and shadow copies very likely survive on default
-  setups.
-- Lateral movement, the anti-debug check, the AMSI patch and, on 64-bit
-  Windows, the whole evasion layer fail because of bugs in the code.
+- No exploitable weakness was found in the encryption itself (Fernet with
+  RSA-4096). Only the first 1 MiB of each file is encrypted, originals are
+  deleted without being wiped, and shadow copies may survive on default
+  setups (check on each host).
+- Lateral movement, the anti-debug check and the AMSI patch fail because of
+  bugs in the code, and on 64-bit Windows 8.1 and later the evasion layer
+  receives truncated addresses in default configurations.
 - All seven builds decoded; what the builder changes per build is in
   [crosssample/builds.json](reports/crpx0/2026-10-15-28685dff00aa/crosssample/builds.json).
 - Reproduced with a second toolchain (Go standard library and openssl):
@@ -32,6 +33,7 @@ Full technical report: [reports/crpx0/2026-10-15-28685dff00aa/report.md](reports
 |---|---|
 | `tools/` | Decoders for each layer, the configuration extractor, the cross-build runner, the recovery tool and its tests, the YARA validator, the figure renderer and the reproduction script. None of them runs sample code. |
 | `tools/go/crpx0repro/` | Independent re-implementation in Go, standard library only |
+| `tools/go/crpx0fixtures/` | Independent Go writer of `.crpx0` test files, for checking the recovery tool |
 | `detections/` | YARA rules, KQL (Microsoft Defender XDR) and Elastic (EQL, ES\|QL) hunts |
 | `reports/crpx0/2026-10-15-28685dff00aa/` | Report (Markdown and HTML), figures, evidence, cross-build results |
 
@@ -42,8 +44,11 @@ It needs the victim's key, which it can find in a packet capture, a proxy or
 IDS log, a memory image, `pagefile.sys` or `hiberfil.sys`; every candidate is
 checked against an encrypted file before use. Without the key it can still
 write out the part of each file that was never encrypted. It never modifies
-or deletes its input. It has been tested on synthetic files only
-(`tools/crpx0_decrypt_test.py`).
+or deletes its input. It has been tested on synthetic files only: 15 checks
+on files from the Python test writer (`tools/crpx0_decrypt_test.py`) and 11
+files written independently by a Go implementation of the format
+(`tools/go/crpx0fixtures`, `tools/crpx0_decrypt_crosscheck.py`), all restored
+byte for byte. It has not been used on a real victim's files.
 
 ```bash
 python3 tools/crpx0_decrypt.py keyhunt --check some_file.docx.crpx0 capture.pcap

@@ -22,19 +22,23 @@
    captured. We publish a clean-room recovery tool that looks for the key in
    captures, memory images or `pagefile.sys`, checks each candidate against a
    `.crpx0` file and decrypts. It is validated on synthetic files only.
-2. The cryptography is sound. Keys come from `os.urandom`, every file gets
-   a fresh IV, the key is wrapped with RSA-4096-OAEP, no private key is
-   embedded, and the modulus passes four standard weak-key tests. Recovery
-   therefore depends on what leaks or survives: the key on the wire or in
-   memory, the unencrypted remainder of every file beyond 1 MiB, originals
-   that are deleted but never wiped, and, very likely, the shadow copies.
+2. No exploitable cryptographic weakness was identified. Key generation
+   uses the operating system's cryptographic randomness, every file gets a
+   fresh IV, the key is wrapped with RSA-4096-OAEP, no private key is
+   embedded, and the RSA public key did not show any of the tested weak-key
+   properties. Recovery therefore depends on what leaks or survives: the key
+   on the wire or in memory, the unencrypted remainder of every file beyond
+   1 MiB, originals that are deleted but not wiped, and possibly the shadow
+   copies, which have to be checked on each host.
 3. Several parts of the attack cannot work in these builds. Lateral
    movement raises an exception before it starts (`key.encode()` on `bytes`,
    L1053). The IsDebuggerPresent check and the AMSI patch can never find their
-   APIs. On 64-bit Windows every pointer returned through `ctypes` is cut to
-   32 bits, so ntdll unhooking, the ETW patch and the explorer.exe injection
-   fail silently. The UAC step writes a registry key that fodhelper does not
-   read.
+   APIs. The `ctypes` calls that return pointers do not declare a pointer
+   return type, so on the 64-bit Windows versions the installed Python 3.10
+   supports, ntdll unhooking, the ETW patch and the explorer.exe injection
+   receive truncated addresses and fail silently in default configurations.
+   The UAC step writes a registry key that fodhelper does not read (expected,
+   not yet tested on Windows).
 4. All seven builds of 2026-08-04 are decoded end to end. Ransom-ISAC
    listed these files as unanalysed and as the best independent test set for
    their rules. One builder produced them for affiliate 21 in 76 minutes on
@@ -53,6 +57,16 @@ The C2 relays, the token, the decoder design, the Fernet-wrapped
 configuration, the file format and the partial encryption were already
 published by others. *Prior art* lists what each source covers. This report reproduces those
 points byte for byte and credits them to their authors.
+
+## For incident responders
+
+| | |
+|---|---|
+| If you have network capture, IDS or proxy logs with HTTP bodies | Search for POSTs to `207.180.29[.]236:8080` with a `decryption_key` field. `tools/crpx0_decrypt.py keyhunt` finds the key and checks it against one of your `.crpx0` files; `decrypt` then restores every file from that host. |
+| If the host was not rebooted, or has a pagefile or hibernation file | Image memory and run `keyhunt --any` over the image, `pagefile.sys` and `hiberfil.sys`. |
+| In any case | Run `vssadmin list shadows`; copies may have survived (see D5, D6). Run `salvage` to recover the unencrypted part of files over 1 MiB, and try undeleting originals. |
+| What the tool cannot do | Decrypt without the key or the operator's RSA private key. It does not break Fernet or RSA. |
+| How it was tested | Synthetic files only: 15 checks on files from our Python test writer and 11 byte-identical restores of files written independently in Go. Not yet used on a real victim's files. |
 
 ## The chain at a glance
 
@@ -135,7 +149,11 @@ as follows.
 3. It picks `Low_Graphics_Cache`, `Sys_Diagnostics`, `Windows_Driver_Host`,
    `Update_Temp_Store` or `Cache_Sys` at random under `%TEMP%`.
 4. It downloads `python-3.10.11-embed-amd64.zip` when `IsWow64Process` is
-   true (otherwise the win32 build) and `get-pip.py` with WinINet. A `.onion`
+   true, otherwise the win32 build, and `get-pip.py`, with WinINet. Stage 2 is
+   a 32-bit PE and `FUN_00402a2b` passes `GetCurrentProcess()`, so the test is
+   true exactly when it runs under WOW64 on 64-bit Windows (decompile: a zero
+   result selects the win32 URL at `0x40b080`, otherwise the amd64 URL at
+   `0x40b020`). A `.onion`
    URL would be retried through tor2web suffixes `.ws`, `.ly`, `.pet`, `.sh`
    and `.moe` (`FUN_00401fe7`).
 5. It writes the bootstrap to `\sys_service.py` (exactly `0x3A0B78` bytes),
@@ -228,14 +246,14 @@ rendered from the quarantined source with line numbers.*
 
 ## Recovery options
 
-The cryptography gives nothing away (*Implementation faults*, section A).
+No weakness was found in the cryptography (*Implementation faults*, section A).
 For a victim of these builds, the realistic paths are below, most promising
 first.
 
 | # | Path | Basis | Status |
 |---|---|---|---|
 | 1 | Key from network capture: a POST to `207.180.29[.]236:8080` (`relay[.]php`) containing `"decryption_key"`, sent before encryption starts | L1300–1309, L1370; plain HTTP | observed in code |
-| 2 | Shadow copies (`vssadmin list shadows`, Previous Versions) | deleting them needs admin, and the UAC step does not elevate (D5, D6) | expected, not confirmed |
+| 2 | Shadow copies (`vssadmin list shadows`, Previous Versions) | deleting them normally needs elevation, and the UAC step is not expected to provide it (D5, D6) | possible; check on each host |
 | 3 | Key from memory: `python(w).exe` memory, `pagefile.sys`, `hiberfil.sys` or a crash dump. The 44-character key is held as bytes, as two strings and inside every JSON body | L1298–1372 | possible; depends on timing |
 | 4 | The unencrypted remainder of every file after its first MiB | L1339–1347 | observed |
 | 5 | Undelete or carve the originals (HDD, VM disks without UNMAP); NTFS-resident small files keep their data in the MFT | `os.remove` with no wipe, L1350 | observed in code; depends on the disk |
@@ -253,7 +271,15 @@ deletes.
 
 It passes 15 checks on synthetic fixtures built with our own Fernet key and
 our own RSA-4096 key pair (`tools/crpx0_decrypt_test.py`,
-`evidence/decrypt_test_summary.json`). The fixtures range from 0 bytes to 3 MiB
+`evidence/decrypt_test_summary.json`). Because those fixtures come from the
+same Python code base as the decryptor, a misreading of the format could hide
+in both, so a second writer was built independently in Go
+(`tools/go/crpx0fixtures`: its own Fernet implementation from the
+specification, its own RSA-4096 key pair, the layout taken from stage 3
+L1335–1350). The decryptor restores all 11 Go-written files byte for byte,
+both with the key and through the RSA private key, and the `.crpx0` YARA rule
+matches all 11 (`tools/crpx0_decrypt_crosscheck.py`,
+`evidence/decrypt_crosscheck_summary.json`). The fixtures range from 0 bytes to 3 MiB
 around the 1 MiB boundary. The key is found among decoys in a proxy-style log
 and in a 53 MiB memory-style image, wrong keys and a tampered token are
 rejected, and the inputs are left untouched. The tool has not been used on a
@@ -264,17 +290,21 @@ real victim's files.
 The full table, with a VM test for each item, is in
 `evidence/implementation-faults.md`.
 
-### A. Cryptography: no exploitable flaw
+### A. Cryptography: no exploitable weakness identified
 
-No stage of any build contains a private key. `get_env_key()` is defined at
+These are preliminary weak-key checks; passing them does not prove the key
+secure, it only rules out the common failures. No stage of any build contains
+a private key. `get_env_key()` is defined at
 L334 and never called. The RSA modulus has no factor below 2·10⁶, and Fermat
 factoring (2·10⁶ iterations), Pollard p−1 (B1 = 10⁶) and the ROCA fingerprint
 test all come back negative (`evidence/rsa-key-checks.json`).
 
 ### B. Faults established from the code
 
-D1, lateral movement cannot run. `domain_encrypt_network(fernet, key)` calls
-`key.encode()` on `key`, which is `bytes` (L1053). `bytes` has no `encode`
+D1, lateral movement cannot run. `domain_encrypt_network(fernet, key)` has a
+single call site (L1372), and the `key` passed there is the value of
+`Fernet.generate_key()` (L1298), which is always `bytes`. The function calls
+`key.encode()` on it (L1053). `bytes` has no `encode`
 method, so an `AttributeError` is raised before domain discovery, the ARP and
 /24 sweeps, share encryption, the WMI and schtasks push and the SYSVOL script.
 The exception is reported to the C2 as `propagation_error`. All seven builds
@@ -284,15 +314,21 @@ D2, the IsDebuggerPresent check and the AMSI patch are dead. Their three
 integer lists (L99, L291–292) decode to garbage with the build key. Solving
 each list against the name in its comment gives a different key per list, and
 two lists do not even match their names in length. The lists are byte-identical
-in all seven builds, while every other list is re-keyed per build. `resolve_api`
-finds nothing and both functions return.
+in all seven builds, while every other list is re-keyed per build. With an
+unresolvable name `resolve_api` returns `None`; `check_debugger` only acts
+`if addr` (L101) and `patch_amsi` returns at `if not func_addr` (L294), so
+neither has any other path.
 
 D3, the evasion layer fails on 64-bit Windows. `GetModuleHandleW`,
 `LoadLibraryW`, `GetProcAddress` and `VirtualAllocEx` are called without a
 `restype` (L74–77, L259, L1604, L1643), so `ctypes` treats each return value as
-a 32-bit `int`. Stage 2 installs the amd64 Python whenever `IsWow64Process` is
-true, and on 64-bit Windows module bases lie above 4 GB, so handles and
-addresses lose their upper half (Figure 4 and `evidence/ctypes_truncation.txt`).
+a 32-bit `int`. Stage 2 installs the amd64 Python on 64-bit Windows (see
+Stage 2, step 4). Python 3.10 requires Windows 8.1 or later; on those
+versions, in default configurations, 64-bit system DLLs are mapped above
+4 GB, so handles and addresses lose their upper half (Figure 4 and
+`evidence/ctypes_truncation.txt`). Where an address happens to fit in 31 bits
+the call would work; the routines are vulnerable to truncation rather than
+certain to fail on every system.
 `resolve_api` returns `None`, and ntdll unhooking, the ETW patch, the
 waitable-timer sleep and the explorer.exe injection fail inside their
 `try/except` blocks. Commands then run through `subprocess` as children of
@@ -321,9 +357,11 @@ happens is the one open question worth testing; a small harness in a clean
 Windows VM answers it without the sample.
 
 D6 follows from D5. Deleting shadow copies and the backup catalog, killing AV
-processes, stopping services and creating the ONLOGON task all need admin
-rights. On a host with default UAC settings these steps fail, unless the
-victim started the dropper elevated or UAC is off.
+processes, stopping services and creating the ONLOGON task normally need an
+elevated token. On a host with default UAC settings these steps are expected
+to fail, unless the victim started the dropper elevated, UAC is off, or the
+account holds rights that allow them (for example Backup Operators for
+wbadmin). Whether copies survived has to be checked on each affected host.
 
 Two smaller issues: `run_capture` reads the command output 0.5 seconds after
 `WinExec` returns, before the command has finished (L1660–1679), and the
@@ -363,6 +401,7 @@ sample and compares three implementations (`evidence/reproduction.txt`).
 | B | Go 1.27 standard library only (`debug/pe`, `encoding/base64`, `compress/zlib`, `crypto/aes`, `crypto/hmac`); `dx` lists found with a regular expression instead of a parser (`tools/go/crpx0repro`) | stage 2, stage 3, XOR key, Fernet timestamp, all 14 `dx` strings and both relay URLs identical |
 | C | openssl 3.5 command line: HMAC check and AES-128-CBC decryption of `ENCRYPTED_XOR_KEY` | XOR key identical |
 | D | recovery tool on synthetic fixtures | 15/15 checks pass |
+| E | independent CRPx0-format writer in Go (`tools/go/crpx0fixtures`), read back by the recovery tool | 11/11 files byte-identical, by key and by RSA private key |
 
 Both pipelines also match the recorded `evidence/pipeline-summary.json`, which
 holds hashes only. The script ends with `RESULT: IDENTICAL`.
@@ -440,7 +479,7 @@ report describes what these seven builds do.
 | `detections/yara/crpx0_stage2_python_installer.yar` | YARA | decoy folder names, `tar.exe -xf`, XOR-encoded `CRPX0_EMBEDDED`, `sys_service.py`, embed URL and pip line (`xor(1-255)`) | 7/7 |
 | `detections/yara/crpx0_python_payload.yar`, rule `CRPX0_Python_Payload` | YARA | stage-3 source, in memory or carved | 7/7 |
 | same file, rule `CRPX0_Bootstrap_Script` | YARA | `sys_service.py` on disk | 7/7 |
-| `detections/yara/crpx0_encrypted_file.yar` | YARA | the `.crpx0` file layout, for scoping an incident | 10/10 synthetic files |
+| `detections/yara/crpx0_encrypted_file.yar` | YARA | the `.crpx0` file layout, for scoping an incident | 10/10 synthetic files, 11/11 Go-written files |
 | benign corpus | n/a | `~/.local/opt` toolchains (Ghidra, JDK, .NET, Node, Go), the system Python library, `/usr/bin` | 0 hits on 47,483 files |
 | `detections/kql/crpx0_execution_chain.kql` | Defender XDR | `LOCALAPPDATA\*.dll` started as a process, tar.exe into a decoy folder, python running `sys_service.py`, the scheduled-task names, `ms-settings\shell\open<6 hex>`, recovery inhibition under python.exe or explorer.exe, creation of `.crpx0` files and notes | not tested on telemetry |
 | `detections/kql/crpx0_2026-08_iocs.kql` | Defender XDR | 14 stage-1 and stage-2 hashes, the relay IP and leak domains (stored defanged, refanged in the query) | exact match |
@@ -456,7 +495,8 @@ these scripts build with `chr()`), all seven stage-3 files and all ten
 synthetic encrypted files.
 
 Limits: the benign set is local and has few Windows binaries, and all
-positives are builds from one affiliate on one day.
+positives are builds from one affiliate on one day. A Windows benign corpus
+and builds from other affiliates are needed before claiming wider coverage.
 
 ## IOCs
 
@@ -522,8 +562,8 @@ geo        hxxp://ip-api[.]com/json, hxxps://ipinfo[.]io/json (User-Agent curl/7
 `stage2_strings.txt`, `bootstrap.py.txt` (blob removed),
 `stage3-config.defanged.json`, `ransom-note.defanged.txt`,
 `implementation-faults.md`, `rsa-key-checks.json`, `ctypes_truncation.txt`,
-`prior-art.md`, `pipeline-summary.json`, `reproduction.txt` and
-`decrypt_test_summary.json`. `crosssample/`: `builds.json`,
+`prior-art.md`, `pipeline-summary.json`, `reproduction.txt`,
+`decrypt_test_summary.json` and `decrypt_crosscheck_summary.json`. `crosssample/`: `builds.json`,
 `yara_validation.json` and `risac_rules_test.json`. `figures/`: six SVG files
 rendered by `tools/crpx0_figures.py` from the files above. Decoded stages are
 kept in `samples/<sha256>/` with mode 0400; they were never executed and are
@@ -538,6 +578,7 @@ not published.
 | Stage 3 to configuration | `crpx0_config.py <stage3> <out.json> [--notes DIR] [--wallpaper PNG]` |
 | All builds | `crpx0_crosssample.py <out.json> <sha256>...` |
 | Recovery | `crpx0_decrypt.py inspect / keyhunt / decrypt / salvage`; tests in `crpx0_decrypt_test.py <dir>` |
+| Independent format check | `go build` in `tools/go/crpx0fixtures`, then `crpx0fixtures <dir>` and `crpx0_decrypt_crosscheck.py <dir> <workdir>` |
 | YARA validation | `crpx0_yara_validate.py <shas> <fixtures> <out.json> <benign dirs>...` |
 | Figures | `crpx0_figures.py <report_dir> <samples_dir>` |
 | Everything, from a clean directory | `reproduce_crpx0.sh <empty_dir>` |
@@ -552,5 +593,6 @@ not published.
 - Fortra, What Is CRPx0?: https://fortra.com/blog/crpx0-ransomware-what-you-need-know
 - Fernet specification: https://github.com/fernet/spec/blob/master/Spec.md
 - Python `ctypes` documentation, return types: https://docs.python.org/3/library/ctypes.html#return-types
+- Python on Windows 7 (3.9 and later do not run there): https://discuss.python.org/t/windows-7-support-for-python-3-9-or-3-10-without-a-fork/13842 ; PEP 11: https://peps.python.org/pep-0011/
 - Nemec et al., "The Return of Coppersmith's Attack" (ROCA), CCS 2017
 - C2PA specification: https://c2pa.org/specifications/

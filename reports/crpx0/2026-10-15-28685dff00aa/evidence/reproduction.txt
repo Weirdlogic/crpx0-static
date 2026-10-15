@@ -1,4 +1,4 @@
-# tools/reproduce_crpx0.sh run 2026-10-15T18:13:44Z
+# tools/reproduce_crpx0.sh run 2026-10-15T19:06:32Z
 == A) Python pipeline
 size 3868672  head b'MZ'  sha256 5856f684c90dba657f5cd77dd337d81fd7503b5225e1843341c1f483eebc9560
 keys config 0xd3 bootstrap 0xd6; bootstrap script 3804024 bytes
@@ -16,6 +16,8 @@ openssl XOR key sha256: 3cc4befaa241daf0cc8a1f79e8a707f511499c5495677f5961721221
 == D) recovery tool on synthetic fixtures (own keys)
 PASS inspect parses all fixtures
 PASS keyhunt verifies the true key among decoys
+PASS keyhunt --any finds the bare key in a memory-style image
+PASS keyhunt --any rejects a memory image without the key
 PASS decrypt --key: no failures
 PASS decrypt --key: byte-identical to originals
 PASS decrypt --rsa-private: no failures
@@ -26,6 +28,12 @@ PASS wrong key rejected for every file
 PASS wrong key wrote nothing
 PASS tampered token rejected
 PASS input files untouched
+ALL PASSED
+== E) independent format check: Go-written fixtures
+11 fixtures written to <out>/gofix
+PASS Go-written fixtures decrypted via key: 11 files byte-identical
+PASS Go-written fixtures decrypted via rsa: 11 files byte-identical
+PASS salvage keeps exact size for 2 files > 1 MiB
 ALL PASSED
 == diff
 stage2_sha256    python==go: True

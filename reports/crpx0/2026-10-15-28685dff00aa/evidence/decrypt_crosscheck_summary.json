@@ -1,0 +1,23 @@
+{
+ "writer": "tools/go/crpx0fixtures (Go stdlib)",
+ "files": 11,
+ "sizes": [
+  0,
+  1,
+  15,
+  16,
+  17,
+  255,
+  4096,
+  1048575,
+  1048576,
+  1048577,
+  2097929
+ ],
+ "checks": {
+  "key": true,
+  "rsa": true,
+  "salvage_sizes": true
+ },
+ "all_passed": true
+}
