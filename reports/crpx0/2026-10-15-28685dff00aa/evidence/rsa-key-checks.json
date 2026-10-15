@@ -1,0 +1,9 @@
+{
+ "bits": 4096,
+ "e": 65537,
+ "n_odd": true,
+ "small_factor_lt_2e6": null,
+ "fermat_2e6_iters": null,
+ "pollard_p_minus_1_B1_1e6": null,
+ "roca_fingerprint": false
+}

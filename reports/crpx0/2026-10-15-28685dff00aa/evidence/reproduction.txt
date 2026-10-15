@@ -1,0 +1,39 @@
+# tools/reproduce_crpx0.sh run 2026-10-15T18:13:44Z
+== A) Python pipeline
+size 3868672  head b'MZ'  sha256 5856f684c90dba657f5cd77dd337d81fd7503b5225e1843341c1f483eebc9560
+keys config 0xd3 bootstrap 0xd6; bootstrap script 3804024 bytes
+blob 3802852 b64 chars, sha256(blob) 3c2cf613ecde3121e5e7344784f8ce91a00689f157603796b852729503bd04a5
+stage3 3930267 bytes sha256 752b8fe4e67803e15be65ac5d88be1b12d7d375ecb399cc96efa6f428e04fed2
+xor key 32 bytes (= literal: True, fernet ts 1785692479); 14 dx strings; 2 remote urls; wallpaper 2813145 bytes
+== B) Go pipeline
+stage2 5856f684c90dba657f5cd77dd337d81fd7503b5225e1843341c1f483eebc9560
+stage3 752b8fe4e67803e15be65ac5d88be1b12d7d375ecb399cc96efa6f428e04fed2
+xor key sha256 3cc4befaa241daf0cc8a1f79e8a707f511499c5495677f59617212216bc1733b ts 1785692479
+dx strings 14, remote urls 2
+== C) openssl Fernet cross-check
+openssl HMAC: OK
+openssl XOR key sha256: 3cc4befaa241daf0cc8a1f79e8a707f511499c5495677f59617212216bc1733b
+== D) recovery tool on synthetic fixtures (own keys)
+PASS inspect parses all fixtures
+PASS keyhunt verifies the true key among decoys
+PASS decrypt --key: no failures
+PASS decrypt --key: byte-identical to originals
+PASS decrypt --rsa-private: no failures
+PASS decrypt --rsa-private: byte-identical
+PASS salvage: tail recovered exactly for files > 1 MiB
+PASS salvage: size exact for files > 1 MiB
+PASS wrong key rejected for every file
+PASS wrong key wrote nothing
+PASS tampered token rejected
+PASS input files untouched
+ALL PASSED
+== diff
+stage2_sha256    python==go: True
+stage3_sha256    python==go: True
+xor_key_sha256   python==go: True
+fernet_timestamp python==go: True
+dx               python==go: True  (14 strings)
+remote_urls      python==go: True
+xor key         python==openssl: True
+matches recorded evidence/pipeline-summary.json: True
+RESULT: IDENTICAL

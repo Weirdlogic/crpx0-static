@@ -1,0 +1,73 @@
+// Title:   CRPx0 ransomware - dropper -> Python runtime -> encryption chain
+// Report:  reports/crpx0/2026-10-15-28685dff00aa/report.md
+// Product: Microsoft Defender XDR advanced hunting (also Sentinel with MDE tables)
+// ATT&CK:  T1204.002, T1105, T1059.006, T1548.002, T1053.005, T1490, T1486, T1562.001
+// Status:  DRAFT hunting query - built from static analysis of 7 builds.
+//          Not yet validated against live telemetry. Every branch below is a
+//          behaviour read from the code; none was observed at run time.
+//
+// Branches (any one is worth a look; two or more on one device is strong):
+//  A  a file named <word>.dll under %LOCALAPPDATA% started as a PROCESS
+//     (stage 1 writes stage 2 there and CreateProcessA's it; names seen:
+//     index, store, sync, core)
+//  B  tar.exe unpacking py.zip into %TEMP%\<decoy> (Low_Graphics_Cache,
+//     Sys_Diagnostics, Windows_Driver_Host, Update_Temp_Store, Cache_Sys)
+//  C  python.exe / pythonw.exe from those folders running sys_service.py, or
+//     pip installing "cryptography requests pywin32"
+//  D  ONLOGON task "OneDrive Sync Maintenance" or remote task "OneDrive Maintenance"
+//  E  fodhelper UAC bypass via HKCU\Software\Classes\ms-settings\shell\open<6 hex>\command
+//  F  recovery inhibition / AV kill from the payload. Parent depends on the
+//     platform: the payload tries to run commands via a WinExec thread in
+//     explorer.exe, but its ctypes calls lack restype, so on 64-bit Python
+//     (installed on every 64-bit Windows) the injection fails and commands run
+//     from python.exe / pythonw.exe via cmd.exe (inferred; see report)
+//  G  files with the .crpx0 extension or "HOW TO RECOVER.txt"/".html" created
+let lookback = 7d;
+let decoys = dynamic(["Low_Graphics_Cache","Sys_Diagnostics","Windows_Driver_Host","Update_Temp_Store","Cache_Sys"]);
+let A = DeviceProcessEvents
+    | where Timestamp > ago(lookback)
+    | where FolderPath has @"\AppData\Local\" and FileName matches regex @"(?i)^[a-z]{3,8}\.dll$"
+    | where FolderPath matches regex @"(?i)\\AppData\\Local\\[a-z]{3,8}\.dll$"
+    | extend Branch = "A: LOCALAPPDATA *.dll started as a process";
+let B = DeviceProcessEvents
+    | where Timestamp > ago(lookback)
+    | where FileName =~ "tar.exe" and ProcessCommandLine has "-xf" and ProcessCommandLine has @"\py.zip"
+    | where ProcessCommandLine has_any (decoys)
+    | extend Branch = "B: tar.exe unpacks py.zip into decoy TEMP folder";
+let C = DeviceProcessEvents
+    | where Timestamp > ago(lookback)
+    | where FileName in~ ("python.exe","pythonw.exe")
+    | where (FolderPath has_any (decoys) and ProcessCommandLine has "sys_service.py")
+         or ProcessCommandLine has "pip install cryptography requests pywin32"
+         or (ProcessCommandLine has "sys_service.py" and ProcessCommandLine has "bootstrap_done")
+    | extend Branch = "C: embedded Python runs sys_service.py / pip deps";
+let D = DeviceProcessEvents
+    | where Timestamp > ago(lookback)
+    | where FileName =~ "schtasks.exe" and ProcessCommandLine has "/create"
+    | where ProcessCommandLine has_any ("OneDrive Sync Maintenance","OneDrive Maintenance")
+    | where ProcessCommandLine has "bootstrap_done"
+    | extend Branch = "D: CRPx0 scheduled task";
+let E = DeviceRegistryEvents
+    | where Timestamp > ago(lookback)
+    | where RegistryKey matches regex @"(?i)\\Software\\Classes\\ms-settings\\shell\\open[0-9a-f]{6}\\command$"
+    | extend Branch = "E: fodhelper ms-settings hijack with random suffix";
+let F = DeviceProcessEvents
+    | where Timestamp > ago(lookback)
+    | where (InitiatingProcessFileName =~ "explorer.exe" and FileName =~ "cmd.exe")
+         or InitiatingProcessFileName in~ ("python.exe", "pythonw.exe")
+    | where ProcessCommandLine has_any ("vssadmin delete shadows","shadowcopy delete","wbadmin delete catalog","taskkill /f /im MsMpEng.exe","net stop WinDefend")
+    | extend Branch = "F: explorer.exe or python.exe -> recovery inhibition / AV kill";
+let G = DeviceFileEvents
+    | where Timestamp > ago(lookback)
+    | where ActionType == "FileCreated"
+    | where FileName endswith ".crpx0" or FileName in~ ("HOW TO RECOVER.txt","HOW TO RECOVER.html")
+    | summarize Files = count(), FirstSeen = min(Timestamp), LastSeen = max(Timestamp),
+                SampleName = any(FileName), InitiatingProcessFileName = any(InitiatingProcessFileName)
+        by DeviceId, DeviceName
+    | extend Branch = "G: .crpx0 files / ransom notes", Timestamp = FirstSeen;
+union A, B, C, D, E, F, G
+| summarize Branches = make_set(Branch), FirstSeen = min(Timestamp), LastSeen = max(Timestamp),
+            Examples = make_set(coalesce(ProcessCommandLine, RegistryKey, SampleName), 10)
+    by DeviceId, DeviceName
+| extend BranchCount = array_length(Branches)
+| order by BranchCount desc, FirstSeen asc

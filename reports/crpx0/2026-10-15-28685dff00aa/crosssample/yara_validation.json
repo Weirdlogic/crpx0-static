@@ -1,0 +1,51 @@
+{
+ "rules": [
+  "detections/yara/crpx0_encrypted_file.yar",
+  "detections/yara/crpx0_python_payload.yar",
+  "detections/yara/crpx0_stage1_dropper_stub.yar",
+  "detections/yara/crpx0_stage2_python_installer.yar"
+ ],
+ "positives": {
+  "stage1": {
+   "files": 7,
+   "expected_rule": "CRPX0_Stage1_Dropper_Stub",
+   "hit": 7,
+   "other_rules": []
+  },
+  "stage2": {
+   "files": 7,
+   "expected_rule": "CRPX0_Stage2_Python_Installer",
+   "hit": 7,
+   "other_rules": []
+  },
+  "stage3": {
+   "files": 7,
+   "expected_rule": "CRPX0_Python_Payload",
+   "hit": 7,
+   "other_rules": []
+  },
+  "bootstrap": {
+   "files": 7,
+   "expected_rule": "CRPX0_Bootstrap_Script",
+   "hit": 7,
+   "other_rules": []
+  },
+  "encrypted": {
+   "files": 10,
+   "expected_rule": "CRPX0_Encrypted_File",
+   "hit": 10,
+   "other_rules": []
+  }
+ },
+ "benign": {
+  "dirs": [
+   "~/.local/opt",
+   "/usr/lib/python3",
+   "/usr/lib/python3.14",
+   "/usr/bin"
+  ],
+  "files": 47483,
+  "hits_by_rule": {},
+  "hit_files": []
+ }
+}

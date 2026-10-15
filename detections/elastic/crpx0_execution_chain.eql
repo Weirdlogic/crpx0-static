@@ -1,0 +1,23 @@
+/*
+  Title:   CRPx0 ransomware - dropper -> embedded Python -> sys_service.py
+  Report:  reports/crpx0/2026-10-15-28685dff00aa/report.md
+  Product: Elastic Security (EQL) on Elastic Defend data (logs-endpoint.events.*)
+  ATT&CK:  T1204.002, T1105, T1059.006
+  Status:  DRAFT - built from static analysis of 7 builds; not validated on
+           telemetry. Same logic as branches A-C of crpx0_execution_chain.kql.
+
+  Stage 1 writes %LOCALAPPDATA%\<word>.dll (index/store/sync/core) and starts it
+  as a process; stage 2 unpacks the python.org embeddable zip with tar.exe into
+  %TEMP%\<decoy folder> and starts python.exe sys_service.py from there.
+*/
+sequence by host.id with maxspan=15m
+  [process where host.os.type == "windows" and event.type == "start" and
+     process.executable regex~ """[A-Za-z]:\\Users\\[^\\]+\\AppData\\Local\\[a-z]{3,8}\.dll"""]
+  [process where host.os.type == "windows" and event.type == "start" and
+     process.name : "tar.exe" and process.args : "-xf" and
+     process.command_line : ("*\\Low_Graphics_Cache\\*", "*\\Sys_Diagnostics\\*",
+                             "*\\Windows_Driver_Host\\*", "*\\Update_Temp_Store\\*", "*\\Cache_Sys\\*")]
+  [process where host.os.type == "windows" and event.type == "start" and
+     process.name : ("python.exe", "pythonw.exe") and
+     (process.command_line : "*sys_service.py*" or
+      process.command_line : "*pip install cryptography requests pywin32*")]

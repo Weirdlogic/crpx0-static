@@ -1,0 +1,16 @@
+{
+ "source": "https://ransom-isac.org/blog/crpx0-clickfix-ransomware-analysis/ (YARA block, 11 rules, read 2026-10-15)",
+ "fixes": ["em dash -> '-' in two for-ranges (lines 150, 156 of the extracted block)", "meta keys hash_[REDACTED] renamed (invalid identifiers)"],
+ "scanner": "YARA-X 1.21.0",
+ "results": {
+  "stage1_dll_builds": {"files": 3, "hit_by": ["CRPx0_Stager_DLL", "CRPx0_Standalone_Loader_PE"], "hits": 3},
+  "stage1_exe_builds": {"files": 4, "hit_by": [], "hits": 0},
+  "stage2_dll_builds": {"files": 3, "hit_by": ["CRPx0_Loader_DLL"], "hits": 3},
+  "stage2_exe_builds": {"files": 4, "hit_by": [], "hits": 0},
+  "bootstrap": {"files": 7, "hit_by": [], "hits": 0},
+  "stage3": {"files": 7, "hit_by": ["CRPx0_Ransomware_Python"], "hits": 7},
+  "synthetic_encrypted": {"files": 10, "hit_by": ["CRPx0_Encrypted_File_Header"], "hits": 10}
+ },
+ "exe_builds": ["28685dff", "bac34052", "9cfe9b89", "0dc6a5ce"],
+ "dll_builds": ["290d41e7", "8af1afc8", "ef431e36"]
+}

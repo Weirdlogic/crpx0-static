@@ -1,0 +1,4 @@
+python 3.14.4 x86_64 pointer size 64-bit
+dlsym('printf') with default restype : -0x1f19bf80
+dlsym('printf') with restype=c_void_p: 0x74a8e0e64080
+truncated to low 32 bits (sign-extended): True, equal: False

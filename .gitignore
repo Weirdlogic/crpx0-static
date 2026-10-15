@@ -1,0 +1,11 @@
+# never publish samples or binaries
+samples/
+quarantine/
+*.bin
+*.zip
+*.exe
+*.dll
+.env
+*.env
+Abuse.ch/
+__pycache__/

