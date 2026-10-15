@@ -24,7 +24,12 @@ import re
 import subprocess
 import sys
 
-FONT = 'font-family="var(--mono)"'
+# Light-theme fallbacks: the HTML report defines these variables (light and
+# dark); an SVG shown through <img> (GitHub, image viewers) does not, so every
+# var() carries a fallback colour.
+LIGHT = {"surface": "#ffffff", "fg": "#1b2226", "muted": "#56636b", "rule": "#d7dcd9",
+         "tint": "#e9ecea", "alert": "#b4361b", "link": "#1f5f8b",
+         "mono": "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace"}
 W = 960
 
 
@@ -32,15 +37,19 @@ def esc(s):
     return html.escape(s, quote=False)
 
 
+def fallback(s):
+    return re.sub(r"var\(--([a-z]+)\)", lambda m: f"var(--{m.group(1)}, {LIGHT[m.group(1)]})", s)
+
+
 def svg(h, body):
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {h}" width="{W}" height="{h}">'
+    return fallback(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {h}" width="{W}" height="{h}">'
             f'<rect width="{W}" height="{h}" style="fill:var(--surface)"/>{body}</svg>\n')
 
 
 def text(x, y, s, size=12, cls="fg", weight="normal", anchor="start"):
     color = {"fg": "var(--fg)", "muted": "var(--muted)", "alert": "var(--alert)", "link": "var(--link)"}[cls]
-    return (f'<text xml:space="preserve" x="{x}" y="{y}" {FONT} font-size="{size}" font-weight="{weight}" '
-            f'text-anchor="{anchor}" style="fill:{color}">{esc(s)}</text>')
+    return (f'<text xml:space="preserve" x="{x}" y="{y}" font-size="{size}" font-weight="{weight}" '
+            f'text-anchor="{anchor}" style="font-family:var(--mono);fill:{color}">{esc(s)}</text>')
 
 
 def foot(y, s, width=W - 20, size=11):
